@@ -7,186 +7,127 @@
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
 
-@file:Suppress("MemberVisibilityCanBePrivate")
+@file:JvmName("ConfigFactory")
+@file:Suppress("MemberVisibilityCanBePrivate", "DEPRECATION_ERROR", "unused")
 
 package net.mamoe.mirai.console.plugins
 
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import com.moandjiezana.toml.Toml
-import com.moandjiezana.toml.TomlWriter
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.UnstableDefault
-import net.mamoe.mirai.console.encodeToString
-import net.mamoe.mirai.utils.MiraiInternalAPI
-import org.yaml.snakeyaml.Yaml
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.ImmutableMap
+import kotlinx.collections.immutable.toPersistentList
+import kotlinx.collections.immutable.toPersistentMap
 import java.io.File
-import java.io.InputStream
-import java.util.*
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.NoSuchElementException
-import kotlin.properties.ReadWriteProperty
-import kotlin.reflect.KClass
-import kotlin.reflect.KProperty
-import kotlin.reflect.full.isSubclassOf
-
 
 /**
- * 标注一个即将在将来版本删除的 API
- *
- * 目前 [Config] 的读写设计语义不明, list 和 map 读取效率低, 属性委托写入语义不明
- * 将在未来重写并变为 `ReadOnlyConfig` 和 `ReadWriteConfig`.
- * 并计划添加图形端配置绑定, 和带注释的序列化, 自动保存的配置文件, 与指令绑定的属性.
+ * 插件配置. 值可能会被 UI 端改动
  */
-@RequiresOptIn("将在未来进行不兼容的修改", RequiresOptIn.Level.WARNING)
-annotation class ToBeRemoved
-
-/**
- * 可读可写配置文件.
- *
- * @suppress 注意: 配置文件正在进行不兼容的修改
- */
-interface Config {
-    @ToBeRemoved
-    fun getConfigSection(key: String): ConfigSection
-
-    fun getString(key: String): String
-    fun getInt(key: String): Int
-    fun getFloat(key: String): Float
-    fun getDouble(key: String): Double
-    fun getLong(key: String): Long
-    fun getBoolean(key: String): Boolean
-
-    @ToBeRemoved
-    fun getList(key: String): List<*>
-
-
-    @ToBeRemoved
-    fun getStringList(key: String): List<String>
-
-    @ToBeRemoved
-    fun getIntList(key: String): List<Int>
-
-    @ToBeRemoved
-    fun getFloatList(key: String): List<Float>
-
-    @ToBeRemoved
-    fun getDoubleList(key: String): List<Double>
-
-    @ToBeRemoved
-    fun getLongList(key: String): List<Long>
-
-    @ToBeRemoved
-    fun getConfigSectionList(key: String): List<ConfigSection>
-
-    operator fun set(key: String, value: Any)
-    operator fun get(key: String): Any?
-    operator fun contains(key: String): Boolean
-
-    @ToBeRemoved
-    fun exist(key: String): Boolean
+interface Setting : Map<String, Setting.Value<Any?>> {
 
     /**
-     * 设置 key = value (如果value不存在则valueInitializer会被调用)
-     * 之后返回当前key对应的值
-     * */
-    @ToBeRemoved
-    fun <T : Any> setIfAbsent(key: String, value: T)
-
-    @ToBeRemoved
-    fun <T : Any> setIfAbsent(key: String, valueInitializer: Config.() -> T)
-
-    @ToBeRemoved
-    fun asMap(): Map<String, Any>
-
-    @ToBeRemoved
-    fun save()
-
-    companion object {
-        @ToBeRemoved
-        fun load(fileName: String): Config {
-            return load(
-                File(
-                    fileName.replace(
-                        "//",
-                        "/"
-                    )
-                )
-            )
-        }
-
-        /**
-         * create a read-write config
-         * */
-        @ToBeRemoved
-        fun load(file: File): Config {
-            if (!file.exists()) {
-                file.createNewFile()
-            }
-            return when (file.extension.toLowerCase()) {
-                "json" -> JsonConfig(file)
-                "yml" -> YamlConfig(file)
-                "yaml" -> YamlConfig(file)
-                "mirai" -> YamlConfig(file)
-                "ini" -> TomlConfig(file)
-                "toml" -> TomlConfig(file)
-                "properties" -> TomlConfig(file)
-                "property" -> TomlConfig(file)
-                "data" -> TomlConfig(file)
-                else -> error("Unsupported file config type ${file.extension.toLowerCase()}")
-            }
-        }
-
-        /**
-         * create a read-only config
-         */
-        @ToBeRemoved
-        fun load(content: String, type: String): Config {
-            return when (type.toLowerCase()) {
-                "json" -> JsonConfig(content)
-                "yml" -> YamlConfig(content)
-                "yaml" -> YamlConfig(content)
-                "mirai" -> YamlConfig(content)
-                "ini" -> TomlConfig(content)
-                "toml" -> TomlConfig(content)
-                "properties" -> TomlConfig(content)
-                "property" -> TomlConfig(content)
-                "data" -> TomlConfig(content)
-                else -> error("Unsupported file config type $content")
-            }
-        }
-
-        /**
-         * create a read-only config
-         */
-        @ToBeRemoved
-        fun load(inputStream: InputStream, type: String): Config {
-            return load(inputStream.readBytes().encodeToString(), type)
-        }
-
+     * 配置值. 可能会被 UI 端动态改动
+     */
+    @Suppress("INAPPLICABLE_JVM_NAME")
+    interface Value<T> {
+        @get:JvmName("get")
+        val value: T
     }
 }
 
 
-@ToBeRemoved
-fun File.loadAsConfig(): Config {
+/**
+ * 只读数据文件.
+ */
+interface ReadOnlyConfig : Map<String, Any?> {
+    // Member functions rather than extensions to make Java user happier
+
+    /* final */ fun getString(key: String): String? = this[key]?.toString()
+    /* final */ fun getInt(key: String): Int? = this[key]?.toString()?.toIntOrNull()
+    /* final */ fun getFloat(key: String): Float? = this[key]?.toString()?.toFloatOrNull()
+    /* final */ fun getDouble(key: String): Double? = this[key]?.toString()?.toDoubleOrNull()
+    /* final */ fun getLong(key: String): Long? = this[key]?.toString()?.toLongOrNull()
+    /* final */ fun getBoolean(key: String): Boolean? = this[key]?.toString()?.toBoolean()
+    /* final */ fun getShort(key: String): Short? = this[key]?.toString()?.toShort()
+    /* final */ fun getByte(key: String): Byte? = this[key]?.toString()?.toByte()
+
+    /* final */ fun getList(key: String): ImmutableList<Any?>? = (this[key] as List<Any?>?)?.toPersistentList()
+
+    /* final */ fun getStringList(key: String): ImmutableList<String>? =
+        (this[key] as List<*>?)?.map { it.toString() }?.toPersistentList()
+
+    /* final */ fun getIntList(key: String): ImmutableList<Int>? =
+        (this[key] as List<*>?)?.map { it.toString().toInt() }?.toPersistentList()
+
+    /* final */ fun getFloatList(key: String): ImmutableList<Float>? =
+        (this[key] as List<*>?)?.map { it.toString().toFloat() }?.toPersistentList()
+
+    /* final */ fun getDoubleList(key: String): ImmutableList<Double>? =
+        (this[key] as List<*>?)?.map { it.toString().toDouble() }?.toPersistentList()
+
+    /* final */ fun getLongList(key: String): ImmutableList<Long>? =
+        (this[key] as List<*>?)?.map { it.toString().toLong() }?.toPersistentList()
+
+    /* final */ fun getShortList(key: String): ImmutableList<Short>? =
+        (this[key] as List<*>?)?.map { it.toString().toShort() }?.toPersistentList()
+
+    /* final */ fun getByteList(key: String): ImmutableList<Byte>? =
+        (this[key] as List<*>?)?.map { it.toString().toByte() }?.toPersistentList()
+
+    /* final */ fun getBooleanList(key: String): ImmutableList<Boolean>? =
+        (this[key] as List<*>?)?.map { it.toString().toBoolean() }?.toPersistentList()
+
+    /* final */ fun getConfig(key: String): ReadOnlyConfig? =
+        (this[key] as Map<*, *>?)?.mapKeys { it.toString() }?.toPersistentMap()?.toConfig()
+}
+
+@JvmName("fromMap")
+fun ImmutableMap<String, Any?>.toConfig(): ReadOnlyConfig {
+    return object : ReadOnlyConfig, Map<String, Any?> by this {}
+}
+
+@JvmName("fromMapMutable")
+@JvmSynthetic
+fun Map<String, Any?>.toConfig(): ReadOnlyConfig {
+    return object : ReadOnlyConfig, Map<String, Any?> by this.toPersistentMap() {}
+}
+
+@JvmName("fromMap")
+fun MutableMap<String, Any?>.toConfig(): ReadOnlyConfig {
+    return object : ReadOnlyConfig, Map<String, Any?> by this {}
+}
+
+/**
+ * 可读可写配置文件
+ */
+interface ReadWriteConfig : ReadOnlyConfig, MutableMap<String, Any?>
+
+enum class ConfigFormat {
+    YAML,
+    JSON,
+    TOML
+}
+
+/**
+ * 将文件加载为只读配置
+ */
+fun File.loadAsReadOnlyConfig(): ReadOnlyConfig {
+    require(this.canRead()) { "file cannot be read" }
     return Config.load(this)
 }
 
+
+/*
+
 /* 最简单的代理 */
-@ToBeRemoved
 inline operator fun <reified T : Any> Config.getValue(thisRef: Any?, property: KProperty<*>): T {
     return smartCast(property)
 }
 
-@ToBeRemoved
 inline operator fun <reified T : Any> Config.setValue(thisRef: Any?, property: KProperty<*>, value: T) {
     this[property.name] = value
 }
 
 /* 带有默认值的代理 */
 @Suppress("unused")
-@ToBeRemoved
 inline fun <reified T : Any> Config.withDefault(
     crossinline defaultValue: () -> T
 ): ReadWriteProperty<Any, T> {
@@ -206,7 +147,6 @@ inline fun <reified T : Any> Config.withDefault(
 
 /* 带有默认值且如果为空会写入的代理 */
 @Suppress("unused")
-@ToBeRemoved
 inline fun <reified T : Any> Config.withDefaultWrite(
     noinline defaultValue: () -> T
 ): WithDefaultWriteLoader<T> {
@@ -219,14 +159,12 @@ inline fun <reified T : Any> Config.withDefaultWrite(
 }
 
 /* 带有默认值且如果为空会写入保存的代理 */
-@ToBeRemoved
 inline fun <reified T : Any> Config.withDefaultWriteSave(
     noinline defaultValue: () -> T
 ): WithDefaultWriteLoader<T> {
     return WithDefaultWriteLoader(T::class, this, defaultValue, true)
 }
 
-@ToBeRemoved
 class WithDefaultWriteLoader<T : Any>(
     private val _class: KClass<T>,
     private val config: Config,
@@ -264,7 +202,6 @@ internal inline fun <reified T : Any> Config.smartCast(property: KProperty<*>): 
     return smartCastInternal(property.name, T::class)
 }
 
-@OptIn(ToBeRemoved::class)
 @PublishedApi
 @Suppress("IMPLICIT_CAST_TO_ANY", "UNCHECKED_CAST")
 internal fun <T : Any> Config.smartCastInternal(propertyName: String, _class: KClass<T>): T {
@@ -278,7 +215,7 @@ internal fun <T : Any> Config.smartCastInternal(propertyName: String, _class: KC
         else -> when {
             _class.isSubclassOf(ConfigSection::class) -> this.getConfigSection(propertyName)
             _class == List::class || _class == MutableList::class -> {
-                val list = this.getList(propertyName)
+                val list = this.getList(propertyName) ?: throw NoSuchElementException(propertyName)
                 return if (list.isEmpty()) {
                     list
                 } else {
@@ -308,8 +245,8 @@ internal fun <T : Any> Config.smartCastInternal(propertyName: String, _class: KC
 }
 
 
-@ToBeRemoved
-interface ConfigSection : Config, MutableMap<String, Any> {
+
+interface ConfigSection : Config {
     companion object {
         fun create(): ConfigSection {
             return ConfigSectionImpl()
@@ -328,103 +265,18 @@ interface ConfigSection : Config, MutableMap<String, Any> {
         @Suppress("UNCHECKED_CAST")
         return ConfigSectionDelegation(
             Collections.synchronizedMap(
-                (get(key) ?: throw NoSuchElementException(key)) as LinkedHashMap<String, Any>
+                (get(key) ?: throw NoSuchElementException(key)) as LinkedHashMap<String, Any?>
             )
         )
     }
-
-    override fun getString(key: String): String {
-        return (get(key) ?: throw NoSuchElementException(key)).toString()
-    }
-
-    override fun getInt(key: String): Int {
-        return (get(key) ?: throw NoSuchElementException(key)).toString().toInt()
-    }
-
-    override fun getFloat(key: String): Float {
-        return (get(key) ?: throw NoSuchElementException(key)).toString().toFloat()
-    }
-
-    override fun getBoolean(key: String): Boolean {
-        return (get(key) ?: throw NoSuchElementException(key)).toString().toBoolean()
-    }
-
-    override fun getDouble(key: String): Double {
-        return (get(key) ?: throw NoSuchElementException(key)).toString().toDouble()
-    }
-
-    override fun getLong(key: String): Long {
-        return (get(key) ?: throw NoSuchElementException(key)).toString().toLong()
-    }
-
-    override fun getList(key: String): List<*> {
-        return ((get(key) ?: throw NoSuchElementException(key)) as List<*>)
-    }
-
-    override fun getStringList(key: String): List<String> {
-        return ((get(key) ?: throw NoSuchElementException(key)) as List<*>).filterNotNull().map { it.toString() }
-    }
-
-    override fun getIntList(key: String): List<Int> {
-        return ((get(key) ?: throw NoSuchElementException(key)) as List<*>).map { it.toString().toInt() }
-    }
-
-    override fun getFloatList(key: String): List<Float> {
-        return ((get(key) ?: throw NoSuchElementException(key)) as List<*>).map { it.toString().toFloat() }
-    }
-
-    override fun getDoubleList(key: String): List<Double> {
-        return ((get(key) ?: throw NoSuchElementException(key)) as List<*>).map { it.toString().toDouble() }
-    }
-
-    override fun getLongList(key: String): List<Long> {
-        return ((get(key) ?: throw NoSuchElementException(key)) as List<*>).map { it.toString().toLong() }
-    }
-
-    override fun getConfigSectionList(key: String): List<ConfigSection> {
-        return ((get(key) ?: throw NoSuchElementException(key)) as List<*>).map {
-            if (it is ConfigSection) {
-                it
-            } else {
-                @Suppress("UNCHECKED_CAST")
-                ConfigSectionDelegation(
-                    Collections.synchronizedMap(
-                        it as MutableMap<String, Any>
-                    )
-                )
-            }
-        }
-    }
-
-    override fun exist(key: String): Boolean {
-        return get(key) != null
-    }
-
-    override fun <T : Any> setIfAbsent(key: String, value: T) {
-        putIfAbsent(key, value)
-    }
-
-    override fun <T : Any> setIfAbsent(key: String, valueInitializer: Config.() -> T) {
-        if (this.exist(key)) {
-            put(key, valueInitializer.invoke(this))
-        }
-    }
 }
 
-@OptIn(ToBeRemoved::class)
 internal inline fun <reified T : Any> ConfigSection.smartGet(key: String): T {
     return this.smartCastInternal(key, T::class)
 }
 
 @Serializable
-@ToBeRemoved
-open class ConfigSectionImpl : ConcurrentHashMap<String, Any>(),
-
-    ConfigSection {
-    override fun set(key: String, value: Any) {
-        super.put(key, value)
-    }
-
+open class ConfigSectionImpl : ConcurrentHashMap<String, Any?>(), ConfigSection {
     override operator fun get(key: String): Any? {
         return super.get(key)
     }
@@ -438,28 +290,33 @@ open class ConfigSectionImpl : ConcurrentHashMap<String, Any>(),
         return containsKey(key)
     }
 
-    override fun asMap(): Map<String, Any> {
+    override fun asMap(): Map<String, Any?> {
         return this
     }
 
     override fun save() {
 
     }
+
+    override fun put(key: String, value: Any?): Any? {
+        return if (value != null) {
+            super.put(key, value)
+        } else {
+            super.get(key).also {
+                super<ConcurrentHashMap>.remove(key)
+            }
+        }
+    }
 }
 
-@ToBeRemoved
 open class ConfigSectionDelegation(
-    private val delegate: MutableMap<String, Any>
-) : ConfigSection, MutableMap<String, Any> by delegate {
-    override fun set(key: String, value: Any) {
-        delegate[key] = value
-    }
-
+    private val delegate: MutableMap<String, Any?>
+) : ConfigSection, MutableMap<String, Any?> by delegate {
     override fun contains(key: String): Boolean {
         return delegate.containsKey(key)
     }
 
-    override fun asMap(): Map<String, Any> {
+    override fun asMap(): Map<String, Any?> {
         return delegate
     }
 
@@ -469,7 +326,6 @@ open class ConfigSectionDelegation(
 }
 
 
-@ToBeRemoved
 interface FileConfig : Config {
     fun deserialize(content: String): ConfigSection
 
@@ -478,7 +334,6 @@ interface FileConfig : Config {
 
 
 @MiraiInternalAPI
-@ToBeRemoved
 abstract class FileConfigImpl internal constructor(
     private val rawContent: String
 ) : FileConfig,
@@ -499,14 +354,14 @@ abstract class FileConfigImpl internal constructor(
 
 
     override val size: Int get() = content.size
-    override val entries: MutableSet<MutableMap.MutableEntry<String, Any>> get() = content.entries
+    override val entries: MutableSet<MutableMap.MutableEntry<String, Any?>> get() = content.entries
     override val keys: MutableSet<String> get() = content.keys
-    override val values: MutableCollection<Any> get() = content.values
+    override val values: MutableCollection<Any?> get() = content.values
     override fun containsKey(key: String): Boolean = content.containsKey(key)
-    override fun containsValue(value: Any): Boolean = content.containsValue(value)
-    override fun put(key: String, value: Any): Any? = content.put(key, value)
+    override fun containsValue(value: Any?): Boolean = content.containsValue(value)
+    override fun put(key: String, value: Any?): Any? = content.put(key, value)
     override fun isEmpty(): Boolean = content.isEmpty()
-    override fun putAll(from: Map<out String, Any>) = content.putAll(from)
+    override fun putAll(from: Map<out String, Any?>) = content.putAll(from)
     override fun clear() = content.clear()
     override fun remove(key: String): Any? = content.remove(key)
 
@@ -530,17 +385,12 @@ abstract class FileConfigImpl internal constructor(
         return content[key]
     }
 
-    override fun set(key: String, value: Any) {
-        content[key] = value
-    }
-
-    override fun asMap(): Map<String, Any> {
+    override fun asMap(): Map<String, Any?> {
         return content.asMap()
     }
 
 }
 
-@ToBeRemoved
 @OptIn(MiraiInternalAPI::class)
 class JsonConfig internal constructor(
     content: String
@@ -550,12 +400,26 @@ class JsonConfig internal constructor(
     }
 
     @UnstableDefault
+    companion object {
+        private val json = Json(
+            JsonConfiguration(
+                ignoreUnknownKeys = true,
+                isLenient = true,
+                prettyPrint = true
+            )
+        )
+    }
+
+    @OptIn(ImplicitReflectionSerializer::class)
+    @UnstableDefault
     override fun deserialize(content: String): ConfigSection {
         if (content.isEmpty() || content.isBlank() || content == "{}") {
             return ConfigSectionImpl()
         }
+
+        json.parseJson(content).jsonObject
         val gson = Gson()
-        val typeRef = object : TypeToken<Map<String, Any>>() {}.type
+        val typeRef = object : TypeToken<Map<String, Any?>>() {}.type
         return ConfigSectionDelegation(
             gson.fromJson(content, typeRef)
         )
@@ -568,7 +432,6 @@ class JsonConfig internal constructor(
     }
 }
 
-@ToBeRemoved
 @OptIn(MiraiInternalAPI::class)
 class YamlConfig internal constructor(content: String) : FileConfigImpl(content) {
     constructor(file: File) : this(file.readText()) {
@@ -581,7 +444,7 @@ class YamlConfig internal constructor(content: String) : FileConfigImpl(content)
         }
         return ConfigSectionDelegation(
             Collections.synchronizedMap(
-                Yaml().load(content) as LinkedHashMap<String, Any>
+                Yaml().load(content) as LinkedHashMap<String, Any?>
             )
         )
     }
@@ -592,7 +455,6 @@ class YamlConfig internal constructor(content: String) : FileConfigImpl(content)
 
 }
 
-@ToBeRemoved
 @OptIn(MiraiInternalAPI::class)
 class TomlConfig internal constructor(content: String) : FileConfigImpl(content) {
     constructor(file: File) : this(file.readText()) {
@@ -614,4 +476,4 @@ class TomlConfig internal constructor(content: String) : FileConfigImpl(content)
     override fun serialize(config: ConfigSection): String {
         return TomlWriter().write(config)
     }
-}
+}*/

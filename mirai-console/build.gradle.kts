@@ -25,10 +25,15 @@ dependencies {
     compileOnly("net.mamoe:mirai-core:${Versions.Mirai.core}")
     compileOnly(kotlin("stdlib")) // embedded by core
 
-    api("com.google.code.gson:gson:2.8.6")
+    api("org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm:0.3.2")
+
     api(group = "org.yaml", name = "snakeyaml", version = "1.25")
     api(group = "com.moandjiezana.toml", name = "toml4j", version = "0.7.2")
-    api("org.jsoup:jsoup:1.12.1")
+
+    // binary compatibility only until 1.0.0
+    runtimeOnly("com.google.code.gson:gson:2.8.6")
+    // binary compatibility only until 1.0.0
+    runtimeOnly("org.jsoup:jsoup:1.12.1")
 
     testApi("net.mamoe:mirai-core-qqandroid:${Versions.Mirai.core}")
     testApi(kotlin("stdlib"))
