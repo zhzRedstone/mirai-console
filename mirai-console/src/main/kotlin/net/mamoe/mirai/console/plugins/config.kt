@@ -8,7 +8,13 @@
  */
 
 @file:JvmName("ConfigFactory")
-@file:Suppress("MemberVisibilityCanBePrivate", "DEPRECATION_ERROR", "unused")
+@file:Suppress(
+    "MemberVisibilityCanBePrivate",
+    "DEPRECATION_ERROR",
+    "unused",
+    "NOTHING_TO_INLINE",
+    "INAPPLICABLE_JVM_NAME"
+)
 
 package net.mamoe.mirai.console.plugins
 
@@ -16,23 +22,51 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.ImmutableMap
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.collections.immutable.toPersistentMap
+import net.mamoe.mirai.console.utils.SinceConsole
 import java.io.File
+import kotlin.reflect.KClass
+import kotlin.reflect.KProperty
 
 /**
  * 插件配置. 值可能会被 UI 端改动
  */
-interface Setting : Map<String, Setting.Value<Any?>> {
+@SinceConsole("1.0.0")
+interface SettingsMap : Map<String, SettingsMap.Value<Any?>> {
 
     /**
      * 配置值. 可能会被 UI 端动态改动
      */
-    @Suppress("INAPPLICABLE_JVM_NAME")
     interface Value<T> {
+        @set:JvmName("set")
         @get:JvmName("get")
-        val value: T
+        var value: T
+    }
+
+    interface PrimitiveValue<T : Value<T>> {
+        @set:JvmName("set")
+        @get:JvmName("get")
+        var value: T
+    }
+
+    interface ClassValue<T : SettingsMap> : SettingsMap {
+        @set:JvmName("set")
+        @get:JvmName("get")
+        var value: T
+    }
+
+    interface ListValue<T : SettingsMap> : SettingsMap {
+        @set:JvmName("set")
+        @get:JvmName("get")
+        var value: T
     }
 }
 
+inline operator fun <reified T> SettingsMap.provideDelegate(
+    thisRef: KClass<Any>,
+    property: KProperty<*>
+): SettingsMap.Value<Any?>? = this[property.name]
+
+inline operator fun <T> SettingsMap.Value<T>.getValue(thisRef: KClass<Any>, property: KProperty<*>): T = this.value
 
 /**
  * 只读数据文件.

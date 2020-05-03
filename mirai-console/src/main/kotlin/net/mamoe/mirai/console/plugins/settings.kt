@@ -8,14 +8,19 @@
  */
 
 @file:JvmName("SettingsFactory")
+@file:Suppress("unused")
 
 package net.mamoe.mirai.console.plugins
 
+import kotlinx.atomicfu.locks.withLock
 import kotlinx.serialization.*
 import kotlinx.serialization.SerialName
 import net.mamoe.mirai.console.utils.ConsoleExperimentalAPI
+import org.yaml.snakeyaml.Yaml
+import java.io.File
 import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Proxy
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.reflect.KClass
 import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.memberProperties
@@ -78,9 +83,17 @@ interface ForwardSettings {
 inline fun <reified T : Any> PluginBase.loadSettings() = loadSettings(T::class)
 
 /**
- * 读取
+ * 读取一个配置.
+ *
+ * @param clazz 目标配置 [Class]
+ * @param filename 配置文件名含后缀, 默认使用类的全限定句点名称 ([KClass.qualifiedName]) 并加上 ".yml"
  */
-fun <T : Any> PluginBase.loadSettings(clazz: KClass<T>): T = loadSettingsImpl(clazz)
+@JvmOverloads
+fun <T : Any> PluginBase.loadSettings(
+    clazz: KClass<T>,
+    filename: String = clazz.qualifiedName + ".yml"
+        ?: error("Cannot retrieve classname automatically from a anonymous class. Please specify explicitly")
+): T = loadSettingsImpl(clazz, filename)
 
 
 //// INTERNAL
@@ -88,14 +101,28 @@ fun <T : Any> PluginBase.loadSettings(clazz: KClass<T>): T = loadSettingsImpl(cl
 
 internal class SettingsImpl(
     val descriptor: SerialDescriptor,
-    val delegate: ReadWriteConfig
+    val map: SettingsMap
 ) {
-    companion object {
-        operator fun invoke(clazz: KClass<*>, source: ReadWriteConfig) {
+    /**
+     * Values: primitives or [SettingsImpl]
+     */
+    val delegates: MutableMap<String, Any?> = mutableMapOf()
 
+    val writeLock: ReentrantLock = ReentrantLock()
+
+    fun addClass(name: String, clazz: KClass<*>) {
+        val value = map[name] ?: error("Cannot find corresponding settings for ${clazz.qualifiedName}")
+        check(value is SettingsMap.ClassValue<*>) {
+            "$name is not a ClassValue so cannot be loaded as ${clazz.qualifiedName}"
         }
+        delegates[name] = value.load(clazz)
     }
 
+    companion object {
+        operator fun invoke(clazz: KClass<*>, source: ReadWriteConfig) {
+            TODO()
+        }
+    }
 }
 
 @OptIn(ImplicitReflectionSerializer::class)
@@ -123,15 +150,92 @@ internal fun KClass<*>.parseSerialDescriptor(): SerialDescriptor {
     }
 }
 
-internal fun <T : Any> PluginBase.loadSettingsImpl(clazz: KClass<T>): T {
+@Suppress("UNCHECKED_CAST")
+internal fun <T : Any> PluginBase.loadSettingsImpl(clazz: KClass<T>, name: String): T {
     require(clazz.java.isInterface) { "Settings class must be an interface, but found ${clazz.java}" }
     require(
         clazz.java.getAnnotationsByType(Settings::class.java).isNotEmpty()
     ) { "Settings class must be annotated with ${Settings::class.qualifiedName}" }
 
-    val settings = SettingsImpl(clazz.parseSerialDescriptor(), loadConfig(clazz.qualifiedName!!))
-    val invocationHandler = InvocationHandler { proxy, method, args ->
+    val map = Yaml().load<Map<String, Any?>>(this.dataFolder.child(name).apply { createNewFile() }.inputStream())
 
+    return SettingsMapImpl(map.mapValues {
+
+    }).load(clazz)
+}
+
+internal fun Any?.toSettingsValue(): SettingsMap.Value<Any?> {
+    when (this) {
+        null -> return
+        is Map<*, *> -> return SettingsMapImpl(this.map { it.key.toString() to it.value.toSettingsValue() })
     }
-    Proxy.newProxyInstance(clazz.java.classLoader, clazz.java,)
+}
+
+internal class SettingsListImpl(
+    override var value: List<Any?>
+) : SettingsMap.ListValue<List<Any?>>
+
+internal class SettingsValueImpl(
+    override var value: Any?
+) : SettingsMap.Value<Any?>
+
+internal class SettingsMapImpl(
+    var content: Map<String, SettingsMap.Value<Any?>>
+) : SettingsMap.ClassValue<SettingsMap>, Map<String, SettingsMap.Value<Any?>> by content {
+    override var value: SettingsMap
+        get() = this
+        set(value) {}
+}
+
+internal fun File.child(name: String): File = File(this, name)
+
+fun <T : Any> SettingsMap.load(clazz: KClass<T>): T {
+    val settings = SettingsImpl(clazz.parseSerialDescriptor(), this)
+    val invocationHandler = InvocationHandler { proxy, method, args ->
+        val mName = method.name
+
+        when (mName) {
+            // intrinsics
+            "toString" -> return@InvocationHandler settings.toString()
+            "hashCode" -> return@InvocationHandler settings.hashCode()
+            "equals" -> return@InvocationHandler proxy === args[0]
+        }
+
+        val name = when {
+            mName.startsWith("get") -> method.name.substringAfter("get").toLowerCase()
+            mName.startsWith("set") -> method.name.substringAfter("set").toLowerCase()
+            else -> error("Ambiguous method name: $method. Please declare only `getXxx` and `setXxx` methods")
+        }
+
+        if (!settings.delegates.containsKey(mName)) {
+            settings.writeLock.withLock {
+                if (settings.delegates.containsKey(mName))
+                    return@withLock
+                if (!method.returnType.isMemberClass) {
+
+                }
+                settings.delegates.put(mName, settings.map[name])
+            }
+        }
+
+        settings.delegates[mName]
+    }
+    @Suppress("UNCHECKED_CAST")
+    return Proxy.newProxyInstance(clazz.java.classLoader, arrayOf(clazz.java), invocationHandler) as T
+}
+
+
+private val boxedPrimitives = arrayListOf(
+    Int::class.java,
+    Boolean::class.java,
+    Byte::class.java,
+    Short::class.java,
+    Long::class.java,
+    Float::class.java,
+    Char::class.java,
+    Double::class.java
+)
+
+internal fun Class<*>.isBoxedPrimitive(): Boolean {
+    return this in boxedPrimitives
 }
