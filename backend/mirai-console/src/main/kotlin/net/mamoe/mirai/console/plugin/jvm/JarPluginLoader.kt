@@ -5,102 +5,123 @@
  * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
+ *
  */
 
 package net.mamoe.mirai.console.plugin.jvm
 
-import kotlinx.coroutines.*
-import net.mamoe.mirai.console.MiraiConsole
+import kotlinx.coroutines.CompletableJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import net.mamoe.mirai.console.plugin.AbstractFilePluginLoader
 import net.mamoe.mirai.console.plugin.PluginLoadException
-import net.mamoe.mirai.console.plugin.internal.JvmPluginImpl
-import net.mamoe.mirai.console.plugin.internal.PluginsLoader
-import net.mamoe.mirai.utils.MiraiLogger
+import net.mamoe.mirai.console.utils.instance
 import net.mamoe.yamlkt.Yaml
 import java.io.File
-import java.net.URL
-import kotlin.coroutines.CoroutineContext
-import kotlin.reflect.full.createInstance
+import java.util.*
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.jar.JarEntry
+import java.util.jar.JarFile
 
-/**
- * 内建的 Jar (JVM) 插件加载器
- */
-object JarPluginLoader : AbstractFilePluginLoader<JvmPlugin, JvmPluginDescription>(".jar"), CoroutineScope {
-    private val logger: MiraiLogger by lazy {
-        MiraiConsole.newLogger(JarPluginLoader::class.simpleName!!)
-    }
-
-    override val coroutineContext: CoroutineContext by lazy {
-        MiraiConsole.coroutineContext + SupervisorJob(
-            MiraiConsole.coroutineContext[Job]
-        ) + CoroutineExceptionHandler { _, throwable ->
-            logger.error("Unhandled Jar plugin exception: ${throwable.message}", throwable)
+object JarPluginLoader : AbstractFilePluginLoader<JvmPlugin, JvmPluginDescription>(".jar") {
+    val loadedPlugins = ConcurrentLinkedQueue<JvmPlugin>()
+    override fun loadPlugin(description: JvmPluginDescription): JvmPlugin {
+        if (description.declarePlugin != null) {
+            throw PluginLoadException("Plugin ${description.name} was loaded.")
         }
-    }
-    private val supervisor: Job = coroutineContext[Job]!!
-
-    private val classLoader: PluginsLoader =
-        PluginsLoader(this.javaClass.classLoader)
-
-    init {
-        supervisor.invokeOnCompletion {
-            classLoader.clear()
+        description.dependencies.forEach { dependency ->
+            if (dependency.isOptional) return@forEach
+            if (loadedPlugins.none { it.description.name == dependency.name }) {
+                throw PluginLoadException("Exception in loading ${description.name}: Missing dependency `${dependency.name}`")
+            }
         }
-    }
 
-    override fun getPluginDescription(plugin: JvmPlugin): JvmPluginDescription = plugin.description
-
-    override fun Sequence<File>.mapToDescription(): List<JvmPluginDescription> {
-        return this.associateWith { URL("jar:${it.absolutePath}!/plugin.yml") }.mapNotNull { (file, url) ->
-            kotlin.runCatching {
-                url.readText()
-            }.fold(
-                onSuccess = { yaml ->
-                    Yaml.nonStrict.parse(JvmPluginDescription.serializer(), yaml)
-                },
-                onFailure = {
-                    logger.error("Cannot load plugin file ${file.name}", it)
-                    null
-                }
-            )?.also { it._file = file }
+        val loader = pluginLoaderUsing(description)
+        val main = description.mainClassName
+        try {
+            val klass = loader.loadClass(main).asSubclass(AbstractJvmPlugin::class.java)
+            val instance =
+                klass.instance ?: throw IllegalAccessException("Failed to allocate a new instance for $klass")
+            description.declarePlugin = instance
+            instance._description = description
+            loadedPlugins.add(instance)
+            return instance.also { it.onLoad() }
+        } catch (any: Throwable) {
+            throw PluginLoadException("Failed to load plugin ${description.name}", any)
         }
     }
 
-    @Suppress("RemoveExplicitTypeArguments") // until Kotlin 1.4 NI
-    @Throws(PluginLoadException::class)
-    override fun load(description: JvmPluginDescription): JvmPlugin =
-        description.runCatching<JvmPluginDescription, JvmPlugin> {
-            ensureActive()
-            val main = classLoader.loadPluginMainClassByJarFile(name, mainClassName, file).kotlin.run {
-                objectInstance
-                    ?: kotlin.runCatching { createInstance() }.getOrNull()
-                    ?: (java.constructors + java.declaredConstructors)
-                        .firstOrNull { it.parameterCount == 0 }
-                        ?.apply { kotlin.runCatching { isAccessible = true } }
-                        ?.newInstance()
-            } ?: error("No Kotlin object or public no-arg constructor found")
-
-            check(main is JvmPlugin) { "The main class of Jar plugin must extend JvmPlugin, recommending JavaPlugin or KotlinPlugin" }
-
-            if (main is JvmPluginImpl) {
-                main._description = description
-                main.internalOnLoad()
-            } else main.onLoad()
-            main
-        }.getOrElse<JvmPlugin, JvmPlugin> {
-            throw PluginLoadException("Exception while loading ${description.name}", it)
-        }
+    override fun loadedPlugins(): List<JvmPlugin> {
+        return LinkedList(loadedPlugins)
+    }
 
     override fun enable(plugin: JvmPlugin) {
-        ensureActive()
-        if (plugin is JvmPluginImpl) {
-            plugin.internalOnEnable()
-        } else plugin.onEnable()
+        with(plugin as AbstractJvmPlugin) {
+            kotlin.runCatching {
+                if (_isEnable.compareAndSet(false, true)) {
+                    if (!_coroutineContext[Job]!!.isActive) {
+                        _coroutineContext += SupervisorJob()
+                    }
+                    plugin.onEnable()
+                }
+            }.onFailure {
+                plugin.logger.error("Exception ")
+            }
+        }
     }
 
     override fun disable(plugin: JvmPlugin) {
-        if (plugin is JvmPluginImpl) {
-            plugin.internalOnDisable()
-        } else plugin.onDisable()
+        with(plugin as AbstractJvmPlugin) {
+            kotlin.runCatching {
+                if (_isEnable.compareAndSet(true, false)) {
+                    plugin.onDisable()
+                    _coroutineContext[Job]!!.cancel()
+                }
+            }.onFailure {
+                plugin.logger.error("Exception ")
+            }
+        }
+    }
+
+    override fun unload(plugin: JvmPlugin) {
+        loadedPlugins.removeIf {
+            if (plugin === it) {
+                disable(it)
+                close(it.description)
+                true
+            } else false
+        }
+    }
+
+    private fun close(description: JvmPluginDescription) {
+        description.declareLoader!!.close()
+    }
+
+    override fun disableAll() {
+        loadedPlugins.removeIf {
+            disable(it)
+            close(it.description)
+            true
+        }
+    }
+
+    override fun Sequence<File>.mapToDescription(): List<JvmPluginDescription> {
+        return mapNotNull { file ->
+            runCatching {
+                JarFile(file).use { jar ->
+                    val entry = jar.findEntry() ?: return@mapNotNull null
+                    val stream = jar.getInputStream(entry)!!
+                    return@mapNotNull Yaml.nonStrict.parse(
+                        JvmPluginDescription.serializer(),
+                        stream.readBytes().toString(Charsets.UTF_8)
+                    ).apply { _file = file }
+                }
+            }
+            return@mapNotNull null
+        }.toList()
+    }
+
+    private fun JarFile.findEntry(): JarEntry? {
+        return getJarEntry("mirai-console-plugin.yml") ?: getJarEntry("plugin.yml")
     }
 }

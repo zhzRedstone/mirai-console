@@ -13,6 +13,9 @@ package net.mamoe.mirai.console.plugin
 
 import net.mamoe.mirai.console.plugin.jvm.JarPluginLoader
 import java.io.File
+import java.util.*
+import kotlin.collections.HashMap
+import kotlin.collections.HashSet
 
 /**
  * 插件加载器.
@@ -22,27 +25,19 @@ import java.io.File
  * 有关插件的依赖和已加载的插件列表由 [PluginManager] 维护.
  */
 interface PluginLoader<P : Plugin, D : PluginDescription> {
-    /**
-     * 扫描并返回可以被加载的插件的 [描述][PluginDescription] 列表. 此函数只会被调用一次
-     */
-    fun listPlugins(): List<D>
 
-    /**
-     * 获取此插件的描述
-     */
-    @Throws(PluginLoadException::class)
-    fun getPluginDescription(plugin: P): D
+    fun listDescriptions(): List<D>
 
-    /**
-     * 加载一个插件 (实例), 但不 [启用][enable] 它. 返回加载成功的实例
-     *
-     * @throws PluginLoadException 在加载插件遇到意料之中的错误时抛出 (如找不到主类等).
-     */
     @Throws(PluginLoadException::class)
-    fun load(description: D): P
+    fun loadPlugin(description: D): P
+
+    fun loadedPlugins(): List<P>
 
     fun enable(plugin: P)
     fun disable(plugin: P)
+    fun unload(plugin: P)
+    fun disableAll()
+
 }
 
 open class PluginLoadException : RuntimeException {
@@ -65,9 +60,53 @@ interface FilePluginLoader<P : Plugin, D : PluginDescription> : PluginLoader<P, 
     val fileSuffix: String
 }
 
+abstract class AbstractPluginLoader<P : Plugin, D : PluginDescription> : PluginLoader<P, D> {
+    abstract fun listDescriptionsUnsorted(): List<D>
+    override fun listDescriptions(): List<D> {
+        val list = LinkedList<D>()
+        val unsorted = listDescriptionsUnsorted()
+
+        val allNames = unsorted.mapTo(HashSet()) { it.name }
+
+        val desc = HashMap<String, D>().apply {
+            unsorted.forEach { desc ->
+                this[desc.name] = desc
+            }
+        }
+
+        val loading = LinkedList<String>()
+        fun load(name: String, optional: Boolean) {
+            if (name in loading) {
+                throw PluginLoadException("Infinite loop dependency chain: $loading")
+            }
+            loading.add(name)
+            val des = desc[name] ?: run {
+                if (!optional) {
+                    if (name !in allNames) {
+                        throw PluginLoadException("Unknown plugin: $name")
+                    }
+                }
+                loading.remove(name)
+                return@load
+            }
+            des.dependencies.forEach { dependency ->
+                load(dependency.name, dependency.isOptional)
+            }
+            list.add(des)
+            desc.remove(name)
+            loading.remove(name)
+        }
+
+        val keys = desc.keys
+        while (keys.isNotEmpty()) load(keys.iterator().next(), false)
+        return list
+    }
+}
+
+
 abstract class AbstractFilePluginLoader<P : Plugin, D : PluginDescription>(
     override val fileSuffix: String
-) : FilePluginLoader<P, D> {
+) : AbstractPluginLoader<P, D>(), FilePluginLoader<P, D> {
     private fun pluginsFilesSequence(): Sequence<File> =
         PluginManager.pluginsDir.walk().filter { it.isFile && it.name.endsWith(fileSuffix, ignoreCase = true) }
 
@@ -76,5 +115,5 @@ abstract class AbstractFilePluginLoader<P : Plugin, D : PluginDescription>(
      */
     protected abstract fun Sequence<File>.mapToDescription(): List<D>
 
-    final override fun listPlugins(): List<D> = pluginsFilesSequence().mapToDescription()
+    override fun listDescriptionsUnsorted(): List<D> = pluginsFilesSequence().mapToDescription()
 }

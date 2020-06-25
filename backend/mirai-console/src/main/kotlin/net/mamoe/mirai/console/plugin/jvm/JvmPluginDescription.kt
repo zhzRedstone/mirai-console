@@ -46,6 +46,11 @@ class JvmPluginDescription internal constructor(
     override val file: File
         get() = _file ?: error("Internal error: JvmPluginDescription(name=$name)._file == null")
 
+    @Transient
+    internal var declarePlugin: JvmPlugin? = null
+
+    @Transient
+    internal var declareLoader: JvmPluginClassLoader? = null
 
     @Suppress("PropertyName")
     @Transient

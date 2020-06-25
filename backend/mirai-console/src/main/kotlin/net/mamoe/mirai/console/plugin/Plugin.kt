@@ -28,4 +28,6 @@ interface Plugin {
      * 插件数据目录
      */
     val dataFolder: File
+
+    val isEnable: Boolean
 }

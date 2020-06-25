@@ -5,24 +5,45 @@
  * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
+ *
  */
-
-@file:Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE", "EXPOSED_SUPER_CLASS")
 
 package net.mamoe.mirai.console.plugin.jvm
 
-import net.mamoe.mirai.console.plugin.internal.JvmPluginImpl
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import net.mamoe.mirai.console.MiraiConsole
+import net.mamoe.mirai.console.plugin.PluginManager
+import net.mamoe.mirai.utils.MiraiLogger
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
-/**
- * [JavaPlugin] 和 [KotlinPlugin] 的父类
- *
- * @see JavaPlugin
- * @see KotlinPlugin
- */
-abstract class AbstractJvmPlugin @JvmOverloads constructor(
-    parentCoroutineContext: CoroutineContext = EmptyCoroutineContext
-) : JvmPlugin, JvmPluginImpl(parentCoroutineContext) {
-    // TODO: 2020/6/24 添加 PluginSetting 继承 Setting, 实现 onValueChanged 并绑定自动保存.
+@Suppress("PropertyName")
+open class AbstractJvmPlugin @JvmOverloads constructor(
+    coroutineContext: CoroutineContext = EmptyCoroutineContext
+) : JvmPlugin {
+    internal var _description: JvmPluginDescription? = null
+    override val description: JvmPluginDescription
+        get() = _description ?: error("Plugin not initialized")
+
+    internal val _isEnable = AtomicBoolean(false)
+    override val isEnable: Boolean
+        get() = _isEnable.get()
+
+    override val dataFolder: File by lazy {
+        File(
+            PluginManager.pluginsDataFolder,
+            description.name
+        ).apply { mkdir() }
+    }
+
+    override val logger: MiraiLogger by lazy { MiraiConsole.newLogger(description.name) }
+
+    final override val coroutineContext: CoroutineContext
+        get() = _coroutineContext
+
+    @JvmField
+    internal var _coroutineContext: CoroutineContext = coroutineContext + SupervisorJob(coroutineContext[Job])
 }
