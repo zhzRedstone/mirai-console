@@ -29,5 +29,8 @@ interface Plugin {
      */
     val dataFolder: File
 
+    /**
+     * 获取插件是否已经启动 (Enabled)
+     */
     val isEnable: Boolean
 }

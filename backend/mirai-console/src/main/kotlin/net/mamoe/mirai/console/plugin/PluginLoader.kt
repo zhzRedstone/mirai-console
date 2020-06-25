@@ -26,16 +26,42 @@ import kotlin.collections.HashSet
  */
 interface PluginLoader<P : Plugin, D : PluginDescription> {
 
+    /**
+     * 返回此Loader搜索到的全部可用插件信息
+     *
+     * 实现要求每次执行都重新搜索一遍
+     */
     fun listDescriptions(): List<D>
 
+    /**
+     * 根据 [PluginDescription] 加载一个插件, 但不 [enable]
+     */
     @Throws(PluginLoadException::class)
     fun loadPlugin(description: D): P
 
+    /**
+     * 返回此加载器加载的插件列表
+     */
     fun loadedPlugins(): List<P>
 
+    /**
+     * 启动一个插件
+     */
     fun enable(plugin: P)
+
+    /**
+     * 禁言一个插件
+     */
     fun disable(plugin: P)
+
+    /**
+     * 禁用一个插件, 并且从已加载的插件中删除
+     */
     fun unload(plugin: P)
+
+    /**
+     * 禁用全部插件, 并且清空已加载的插件
+     */
     fun disableAll()
 
 }
