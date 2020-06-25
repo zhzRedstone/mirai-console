@@ -50,4 +50,10 @@ if (!disableOldFrontEnds) {
     }
 }
 
+val testingPlugin = File(rootProject.projectDir, "test/plugin/build.gradle.kts")
+
+if (testingPlugin.exists()) {
+    includeProject(":mirai-plugin-test", "test/plugin")
+}
+
 enableFeaturePreview("GRADLE_METADATA")
