@@ -20,11 +20,11 @@
 package net.mamoe.mirai.console.pure
 
 import net.mamoe.mirai.console.MiraiConsoleInitializer
-import net.mamoe.mirai.console.command.CommandExecuteStatus
-import net.mamoe.mirai.console.command.ConsoleCommandSender
-import net.mamoe.mirai.console.command.executeCommandDetailed
+import net.mamoe.mirai.console.command.*
+import net.mamoe.mirai.console.plugin.PluginManager
 import net.mamoe.mirai.message.data.Message
 import net.mamoe.mirai.utils.DefaultLogger
+import java.io.PrintStream
 import kotlin.concurrent.thread
 
 object MiraiConsolePureLoader {
@@ -37,7 +37,43 @@ object MiraiConsolePureLoader {
 
 internal fun startup() {
     MiraiConsoleInitializer.init(MiraiConsolePure)
+    overrideSOUT()
     startConsoleThread()
+    PluginManager.reloadPlugins()
+
+    object : RawCommand(TestCommandOwner, "reload") {
+
+        override suspend fun onCommand(sender: CommandSender, args: Array<out Any>) {
+            sender.sendMessage("?")
+            PluginManager.reloadPlugins()
+        }
+
+        override val usage: String
+            get() = "?"
+        override val description: String
+            get() = "?"
+        override val permission: CommandPermission
+            get() = CommandPermission.Any
+        override val prefixOptional: Boolean
+            get() = true
+    }.register(true)
+}
+
+internal fun overrideSOUT() {
+    System.setOut(
+        PrintStream(
+            BufferedOutputStream(
+                logger = DefaultLogger("sout").run { ({ line: String? -> info(line) }) }
+            )
+        )
+    )
+    System.setErr(
+        PrintStream(
+            BufferedOutputStream(
+                logger = DefaultLogger("serr").run { ({ line: String? -> warning(line) }) }
+            )
+        )
+    )
 }
 
 internal fun startConsoleThread() {

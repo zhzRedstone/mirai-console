@@ -18,9 +18,11 @@ import net.mamoe.mirai.utils.LoginSolver
 import net.mamoe.mirai.utils.MiraiLogger
 import net.mamoe.mirai.utils.PlatformLogger
 import org.fusesource.jansi.Ansi
+import org.jline.reader.UserInterruptException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.system.exitProcess
 
 private val ANSI_RESET = Ansi().reset().toString()
 
@@ -77,7 +79,11 @@ object MiraiConsoleFrontEndPure : MiraiConsoleFrontEnd {
                     .toString()
             )
         }
-        return ConsoleUtils.lineReader.readLine("> ")
+        return try {
+            ConsoleUtils.lineReader.readLine("> ")
+        } catch (uie: UserInterruptException) {
+            exitProcess(0)
+        }
     }
 
     override fun pushBotAdminStatus(identity: Long, admins: List<Long>) {

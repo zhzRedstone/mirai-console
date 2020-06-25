@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import net.mamoe.mirai.console.IMiraiConsole
 import net.mamoe.mirai.console.MiraiConsoleFrontEnd
 import net.mamoe.mirai.console.plugin.PluginLoader
+import net.mamoe.mirai.console.plugin.jvm.JarPluginLoader
 import net.mamoe.mirai.utils.DefaultLogger
 import net.mamoe.mirai.utils.MiraiLogger
 import java.io.File
@@ -35,7 +36,9 @@ import kotlin.coroutines.EmptyCoroutineContext
 private val delegateScope = CoroutineScope(EmptyCoroutineContext)
 
 object MiraiConsolePure : IMiraiConsole {
-    override val builtInPluginLoaders: List<PluginLoader<*, *>> = LinkedList()
+    override val builtInPluginLoaders: List<PluginLoader<*, *>> = LinkedList<PluginLoader<*, *>>().apply {
+        add(JarPluginLoader)
+    }
     override val frontEnd: MiraiConsoleFrontEnd = MiraiConsoleFrontEndPure
     override val mainLogger: MiraiLogger = DefaultLogger("Console")
     override val rootDir: File = File("./test/console").also {
