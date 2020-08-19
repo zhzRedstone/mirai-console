@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 with Mamoe Exceptions 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 with Mamoe Exceptions license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -25,9 +25,8 @@ package net.mamoe.mirai.console.pure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.mamoe.mirai.Bot
-import net.mamoe.mirai.console.MiraiConsoleBuildConstants
 import net.mamoe.mirai.console.MiraiConsoleFrontEnd
-import net.mamoe.mirai.console.utils.ConsoleInternalAPI
+import net.mamoe.mirai.console.util.ConsoleInternalAPI
 import net.mamoe.mirai.utils.DefaultLoginSolver
 import net.mamoe.mirai.utils.LoginSolver
 import net.mamoe.mirai.utils.MiraiLogger
@@ -72,13 +71,13 @@ object MiraiConsoleFrontEndPure : MiraiConsoleFrontEnd {
     const val COLOR_RESET = "\u001b[39;49m"
     // }
 
-    val sdf by lazy {
+    private val sdf by lazy {
         SimpleDateFormat("HH:mm:ss")
     }
     override val name: String
         get() = "Pure"
     override val version: String
-        get() = MiraiConsoleBuildConstants.version
+        get() = net.mamoe.mirai.console.internal.MiraiConsoleBuildConstants.version
 
     override fun loggerFor(identity: String?): MiraiLogger {
         identity?.apply {

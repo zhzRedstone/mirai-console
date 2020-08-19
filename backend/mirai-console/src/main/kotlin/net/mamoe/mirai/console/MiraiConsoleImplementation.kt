@@ -1,8 +1,8 @@
 /*
- * Copyright 2020 Mamoe Technologies and contributors.
+ * Copyright 2019-2020 Mamoe Technologies and contributors.
  *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license that can be found through the following link.
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 with Mamoe Exceptions 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AFFERO GENERAL PUBLIC LICENSE version 3 with Mamoe Exceptions license that can be found via the following link.
  *
  * https://github.com/mamoe/mirai/blob/master/LICENSE
  */
@@ -13,10 +13,13 @@ package net.mamoe.mirai.console
 
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.CoroutineScope
+import net.mamoe.mirai.console.MiraiConsoleImplementation.Companion.start
 import net.mamoe.mirai.console.command.ConsoleCommandSender
+import net.mamoe.mirai.console.internal.MiraiConsoleImplementationBridge
 import net.mamoe.mirai.console.plugin.PluginLoader
 import net.mamoe.mirai.console.plugin.jvm.JarPluginLoader
 import net.mamoe.mirai.console.setting.SettingStorage
+import net.mamoe.mirai.console.util.ConsoleExperimentalAPI
 import net.mamoe.mirai.utils.MiraiLogger
 import java.io.File
 import java.util.concurrent.locks.ReentrantLock
@@ -35,7 +38,9 @@ import kotlin.annotation.AnnotationTarget.*
 public annotation class ConsoleFrontEndImplementation
 
 /**
- * [MiraiConsole] 前端实现, 需低啊用
+ * 由前端实现这个接口
+ *
+ * @see  MiraiConsoleImplementation.start
  */
 @ConsoleFrontEndImplementation
 public interface MiraiConsoleImplementation : CoroutineScope {
@@ -47,6 +52,7 @@ public interface MiraiConsoleImplementation : CoroutineScope {
     /**
      * Console 前端接口
      */
+    @ConsoleExperimentalAPI
     public val frontEnd: MiraiConsoleFrontEnd
 
     /**
@@ -70,8 +76,9 @@ public interface MiraiConsoleImplementation : CoroutineScope {
         internal lateinit var instance: MiraiConsoleImplementation
         private val initLock = ReentrantLock()
 
-        /** 由前端调用, 初始化 [MiraiConsole] 实例, 并 */
+        /** 由前端调用, 初始化 [MiraiConsole] 实例, 并启动 */
         @JvmStatic
+        @ConsoleFrontEndImplementation
         public fun MiraiConsoleImplementation.start(): Unit = initLock.withLock {
             this@Companion.instance = this
             MiraiConsoleImplementationBridge.doStart()
